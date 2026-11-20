@@ -22,120 +22,176 @@ Traditional ERPs (SAP, Oracle, Tally, Zoho) are built for financial accounting, 
 
 ---
 
-## 3. Implemented Features & Technical Architecture
+## 3. End-to-End Backend Processing Lifecycle: Ingestion to Report Creation
 
-### Architecture Overview
+The backend executes a 7-stage deterministic and agentic pipeline that transforms messy, unstructured factory paperwork into an accredited, audit-ready compliance package:
+
 ```
-[Messy Plant Paperwork]
- (Photos, Scans, Bills)
-          │
-          ▼
+[Raw Files: PDFs, Phone Photos, Bills]
+                   │
+                   ▼  Step 1: Document Upload & Ingestion (/api/upload)
 ┌────────────────────────────────────────────────────────┐
-│ 1. Multimodal Document Extraction (Gemini Flash Vision) │
-│    - Phone photos, rubber stamps, Indian lakh formats │
-│    - Verbatim source quote grounding for every field   │
+│ extract.py: Gemini Multimodal Vision & Grounding       │
+│  - Extracts structured fields                          │
+│  - Captures verbatim source quotes (source_quote)      │
 └────────────────────────────────────────────────────────┘
-          │
-          ▼
+                   │
+                   ▼  Step 2: Normalization & Categorization
 ┌────────────────────────────────────────────────────────┐
-│ 2. Human-in-the-Loop Review Trail                      │
-│    - Clerk verifies, corrects, or overrides data      │
-│    - Immutable edit log with timestamp & user ID      │
+│ server.py: Document Normalizer & Schema Storage        │
+│  - Identifies: mtc, invoice, fuel, production          │
+│  - Converts units: Lakhs -> MT, Litres -> Tonnes/GJ    │
 └────────────────────────────────────────────────────────┘
-          │
-          ▼
+                   │
+                   ▼  Step 3: Human-in-the-Loop Review Trail
 ┌────────────────────────────────────────────────────────┐
-│ 3. Automated Pre-Audit Agent (Google ADK & Skills)     │
-│    - Mass balance breach detection (Annex V benchmarks)│
-│    - Heat overdraft & double-allocation checks        │
-│    - Trader invoice detection & auto-drafted RFIs     │
+│ server.py: Review & Tamper-Evident Edit Logging        │
+│  - Side-by-side inspection                             │
+│  - Records: old_val, new_val, editor_id, timestamp     │
 └────────────────────────────────────────────────────────┘
-          │
-          ▼
+                   │
+                   ▼  Step 4: AI Pre-Audit Review Agent
 ┌────────────────────────────────────────────────────────┐
-│ 4. Deterministic Calculation Engine (Zero AI in math)  │
-│    - Direct emissions (fuel combustion by process)    │
-│    - Indirect emissions (grid power emission factor)   │
-│    - Embedded precursor emissions from verified MTCs  │
-│    - Active Carbon Depletion Ledger                   │
+│ agent/agent.py: Google ADK Pre-Audit Agent             │
+│  - Checks physical mass balance, heat overdrafts       │
+│  - Flags intermediary trader invoices                  │
+│  - Computes Verifier Readiness Score (0–100%)          │
 └────────────────────────────────────────────────────────┘
-          │
-          ▼
+                   │
+                   ▼  Step 5: Deterministic Calculation Engine
 ┌────────────────────────────────────────────────────────┐
-│ 5. Audit-Ready Verifier Dossier (ZIP Export)           │
-│    - Audit trail JSON with source coordinates         │
-│    - Official EU XML & CSV declarations               │
-│    - Physical mass balance report & carbon ledger     │
-│    - Attached primary evidence documents              │
+│ calc.py: Strict Mathematical Rules (ZERO AI)           │
+│  - Annex V Mass Balance (Yield, Scrap, Benchmarks)     │
+│  - Sub-Installation Routing (0.0 direct fuel for cold) │
+│  - Specific Embedded Emissions: SEE_dir + SEE_prec     │
+└────────────────────────────────────────────────────────┘
+                   │
+                   ▼  Step 6: Active Carbon Depletion Ledger
+┌────────────────────────────────────────────────────────┐
+│ server.py: FIFO Heat Balance Sheet                     │
+│  - Tracks purchased_t, allocated_t, remaining_t        │
+│  - Overdraft protection: falls back excess to default  │
+└────────────────────────────────────────────────────────┘
+                   │
+                   ▼  Step 7: Verifier Dossier Generation (/api/dossier)
+┌────────────────────────────────────────────────────────┐
+│ 1-Click ZIP Export:                                    │
+│  - cbam_declaration.csv (Official EU format)           │
+│  - audit_trail.json (Full cryptographic provenance)    │
+│  - mass_balance_report.json & carbon_ledger.json       │
+│  - Attached primary evidence files                     │
 └────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### Detailed Feature Breakdown
+### Step 1: Document Ingestion & Multimodal Vision (`extract.py`)
+When an exporter uploads a document (scanned PDF, phone photo from the plant floor, or fuel bill) via `POST /api/upload`:
+1. **File Type Detection:** File bytes and MIME type are received in `server.py`.
+2. **Gemini Vision Extraction (`extract.py`):** The image or PDF pages are dispatched to **Gemini 3.8 / 2.5 Flash** with a strict JSON schema prompt instructing the model to extract:
+   - Installation details (Mill name, location, country).
+   - Precursor details (Heat number, steel grade, weight in tonnes, emissions intensity `tCO₂/t`).
+   - Production / Fuel quantities (Diesel litres, LPG kg, finished fasteners MT).
+3. **Verbatim Text Grounding:** For *every single extracted field*, the prompt forces Gemini to extract the verbatim text snippet where the value appears:
+   ```json
+   {
+     "heat_number": "KIS-H88213",
+     "heat_number_quote": "Heat No: KIS-H88213",
+     "specific_emissions": 2.10,
+     "specific_emissions_quote": "Specific Carbon Footprint: 2.10 tCO2/t steel",
+     "quantity_t": 200.0,
+     "quantity_t_quote": "Net Weight: 200.00 MT"
+   }
+   ```
+   *If running in an offline or test environment without an API key, the system automatically falls back to regex-based mock parsing.*
 
-#### A. Multimodal Document Ingestion (`extract.py`)
-- **Real-World Paperwork Handling:** Reads scanned PDFs, low-light phone photos from factory floors, and stamps.
-- **Indian Numbering Support:** Parses Indian numbering conventions (e.g., `1,00,000 kg` vs MT).
-- **Verbatim Text Grounding:** For every extracted field (heat number, emissions intensity, tensile strength, weight), the engine captures the exact verbatim text snippet from the document.
-- **Local Fallback Mode:** Operates with a deterministic mock parser when offline or in sandboxed demo environments.
+---
 
-#### B. Human-in-the-Loop Review & Audit Trail (`server.py`, `app.js`)
-- **Review Queue:** Flags unverified fields with side-by-side document evidence.
-- **Correction Logging:** When a clerk edits a value, the platform records:
-  - Original AI-extracted value
-  - User-corrected value
-  - User ID and ISO timestamp
-  - Verbatim source quote
-- **Tamper-Evident History:** The review history is permanently bound to the export dossier for verifier inspection.
+### Step 2: Normalization & Categorization (`server.py`)
+In `server.py`, the extracted JSON is classified and normalized:
+1. **Document Typing:** Assigned one of four CBAM data categories:
+   - `mtc`: Primary Mill Test Certificate (steel precursor emission factor).
+   - `invoice`: Commercial purchase invoice (proves legal acquisition & quantity).
+   - `fuel`: Energy receipts (diesel, LPG, natural gas for heating/forklifts).
+   - `production`: Monthly manufacturing logs (goods finished, scrap generated).
+2. **Unit Conversion & Indian Numbering Handling:**
+   - Converts Indian numbering (e.g. `1,00,000 kg` $\rightarrow$ `100.0 MT`).
+   - Converts liquid fuel volumes to mass and net calorific values ($NCV$) using EU standard factors (e.g., diesel density $0.84\text{ kg/L}$, $NCV = 43.0\text{ TJ/Gg}$).
+3. **Registry Storage:** Stored in the in-memory document store `DOCUMENTS[doc_id]` with verification status `status: "to_confirm"`.
 
-#### C. Metallurgical Mass Balance Engine (`calc.py`)
-Compliant with EU CBAM Annex V:
-- **Finished Yield Ratio:** Calculates `yield_ratio = finished_goods_t / precursor_consumed_t`.
-- **Scrap Loss & Specific Consumption:** Computes process scrap rate and specific precursor consumption (`t precursor / t product`).
-- **EU Benchmark Validation:** Automatically validates against EU operational benchmarks:
-  - **Bolts & Screws:** 88% yield (12% scrap loss)
-  - **Nuts:** 82% yield (18% scrap loss)
-  - **Washers:** 90% yield (10% scrap loss)
-- **Breach Alerting:** Automatically raises verifier warnings if reported production deviates by more than ±5% from metallurgical physical limits.
+---
 
-#### D. Sub-Installation Process Route Allocation (`calc.py`)
-- **Disaggregated Processes:** Separates total plant energy into individual sub-installation routes.
-- **Route Specificity:**
-  - `heat_treated`: Continuous hardening/tempering furnace fuel is allocated directly to heat-treated products.
-  - `cold_formed`: Assigned `0.0 tCO₂/t` direct fuel consumption for cold-headed washers, screws, and standard nuts.
-- **Financial Defense:** Prevents cold-formed goods from being unfairly penalized with overall plant furnace emissions.
+### Step 3: Human-in-the-Loop Review & Audit Logging (`server.py`)
+Before any calculation can be finalized, the human review trail comes into play:
+1. **Side-by-Side Review:** The UI displays the extracted value directly adjacent to its source document quote.
+2. **Verification & Overrides:**
+   - When a clerk confirms a field, `POST /api/documents/confirm` sets `status: "confirmed"`.
+   - If the clerk fixes an OCR mistake, `POST /api/documents/edit` records the change.
+3. **Tamper-Evident Audit Trail:** Every single edit is logged with an immutable entry:
+   ```json
+   {
+     "doc_id": "mtc_1",
+     "field": "quantity_t",
+     "old_value": 20.0,
+     "new_value": 200.0,
+     "changed_by": "clerk_chennai_plant",
+     "timestamp": "2026-11-20T14:30:00Z",
+     "source_quote": "Net Weight: 200.00 MT"
+   }
+   ```
+   *Unconfirmed documents trigger verifier warnings and cap the Verifier Readiness Score.*
 
-#### E. Active Carbon Depletion Ledger (`server.py`)
-- **Double-Allocation Prevention:** Tracks physical heat batches across partial quarterly shipments.
-- **Ledger Balances:** Maintains live records of:
-  - `purchased_t`: Total verified tonnage on the primary MTC.
-  - `allocated_t`: Cumulative tonnage exported across shipments.
-  - `remaining_t`: Legally available verified steel balance.
-- **Overdraft Guardrails:** If an exporter attempts to claim 30 MT from a heat with only 20 MT remaining, the ledger automatically caps the verified allocation at 20 MT and prices the excess 10 MT at default penalty rates.
+---
 
-#### F. Trader vs. Melting Mill Legal Verification (`server.py`, `agent/`)
-- **Legal Mandate:** Implements EU CBAM Article 3(15) rules on legal origin.
-- **Intermediary Detection:** Detects distributor/stockist invoices that lack steelmaking installation details.
-- **Automated Mill RFI:** When a trader certificate is detected, the Review Agent automatically generates a formal RFI (Request for Information) letter addressed to the trader to obtain the original melting furnace heat certificate.
+### Step 4: AI Pre-Audit Review Agent (`agent/agent.py` & `agent/tools.py`)
+Using the **Google Agent Development Kit (ADK)** and Google Agent Skills, the Review Agent acts as a preliminary third-party auditor before an accredited verifier sees the file:
+1. **Material Conservation Audit:** Checks whether the claimed output vs. steel input violates physical metallurgical limits.
+2. **Intermediary Reseller Detection (EU CBAM Art. 3(15)):** Scans invoices for trader/distributor names that are not primary steelmakers. If flagged, it automatically drafts a formal RFI to request the original melting mill test certificate.
+3. **Missing Period Checks:** Scans whether quarterly production months have matching fuel receipts.
+4. **Readiness Scoring:** Computes the **Verifier Readiness Score (0–100%)** based on required documentation completeness.
 
-#### G. AI Pre-Audit Review Agent (`agent/agent.py`, `agent/tools.py`)
-Built using the **Google Agent Development Kit (ADK)** and Google Agent Skills:
-- **Autonomous Audit Checklist:** Simulates the workflow of an accredited third-party verification body (e.g., TÜV, DNV, SGS).
-- **Multi-Skill Suite:**
-  - `skill_mass_balance`: Checks physical material conservation.
-  - `skill_heat_overdraft`: Audits remaining mill certificate balances.
-  - `skill_fuel_attribution`: Flags missing monthly energy receipts.
-  - `skill_trader_audit`: Identifies intermediate distributors.
-- **Verifier Readiness Score:** Computes a 0–100% audit-readiness index surfaced directly on the exporter dashboard.
+---
 
-#### H. 1-Click Verifier Dossier ZIP Export (`server.py`)
-Generates an export package containing:
-1. `audit_trail.json`: Complete cryptographic provenance and edit log.
-2. `cbam_declaration.csv`: Official EU quarterly format.
-3. `mass_balance_report.json`: Annex V yield and scrap breakdown.
-4. `carbon_ledger.json`: Heat-level batch allocation ledger.
-5. Primary evidence files (raw MTCs, invoices, fuel receipts).
+### Step 5: Deterministic Calculation Engine (`calc.py`)
+> **Crucial Rule:** Zero AI is used in the math. All calculations are executed by deterministic Python functions in `calc.py`.
+
+#### A. Metallurgical Mass Balance (Annex V)
+Reconciles physical steel inputs, outputs, and scrap:
+$$\text{Yield Ratio} = \frac{\text{Finished Goods (t)}}{\text{Precursor Steel Consumed (t)}} = \frac{1,000}{1,040} = 96.15\%$$
+$$\text{Scrap Rate} = \frac{\text{Physical Scrap (t)}}{\text{Precursor Steel Consumed (t)}} = \frac{40}{1,040} = 3.85\%$$
+*The engine validates this against EU sector benchmarks (88% for bolts, 82% for nuts). If a plant claims 100% yield with 0% scrap, the engine flags a physical impossibility breach.*
+
+#### B. Sub-Installation Process Route Allocation
+Instead of dumping all plant fuel into every bolt, the factory is split into routes:
+- `cold_formed`: Cold-heading and thread-rolling lines use only electricity. Direct fuel emissions are allocated strictly at **$0.0\text{ tCO}_2/\text{t}$**.
+- `heat_treated`: Continuous tempering/hardening furnaces are allocated strictly to heat-treated product lines.
+
+#### C. Specific Embedded Emissions Math
+$$\text{SEE}_{\text{direct}} = \frac{\text{Direct Fuel Consumption} \times \text{Fuel Emission Factor}}{\text{Total Production}} = \frac{200\text{ tCO}_2}{1,000\text{ t}} = 0.20\text{ tCO}_2/\text{t}$$
+$$\text{SEE}_{\text{precursor}} = \frac{\sum (\text{Allocated Heat Tonnes} \times \text{Specific Heat Footprint})}{\text{Total Production}} = 4.18\text{ tCO}_2/\text{t}$$
+$$\text{Total Embedded Emissions} = \text{SEE}_{\text{direct}} + \text{SEE}_{\text{precursor}} = 0.20 + 4.18 = \mathbf{4.38\text{ tCO}_2/\text{t}}$$
+
+---
+
+### Step 6: Active Carbon Depletion Ledger (`server.py`)
+When an exporter ships goods across multiple quarters, standard ERPs risk double-counting clean steel. The backend enforces an active FIFO depletion ledger:
+1. **Heat Registration:** Each verified MTC registers its total purchased tonnage:
+   - `KIS-H88213`: 200 MT purchased @ 2.10 tCO₂/t.
+2. **Shipment Allocation:** For each export declaration, the engine deducts the steel consumed:
+   $$\text{Remaining Balance} = \text{Purchased Tonnage} - \text{Cumulative Allocated Tonnage}$$
+3. **Overdraft Fallback:** If an exporter attempts to claim 250 MT from a 200 MT certificate:
+   - The first 200 MT is priced at the clean **2.10 tCO₂/t**.
+   - The excess 50 MT is capped and automatically falls back to the **EU default penalty rate (5.72 tCO₂/t + 20% mark-up)**.
+
+---
+
+### Step 7: Verifier Dossier & Report Export (`/api/dossier`)
+When the clerk clicks **"Download Verifier Dossier (ZIP)"**, `server.py` bundles the complete proof chain into an archive containing:
+1. **`cbam_declaration.csv`**: The exact format required by EU customs authorities and EU importers.
+2. **`audit_trail.json`**: Chronological log linking every single number in the declaration to its verbatim document quote, timestamp, and confirming clerk.
+3. **`mass_balance_report.json`**: Complete Annex V breakdown of input wire rod, scrap recovery, and yield benchmarks.
+4. **`carbon_ledger.json`**: Real-time batch-level inventory showing initial, allocated, and remaining certified balances.
+5. **Primary Document Evidence**: Raw PDFs and photos uploaded by the plant.
 
 ---
 
