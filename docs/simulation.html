@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Network simulation · CImEx Compliance</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <a class="brand" href="index.html" style="text-decoration:none;color:inherit"><img class="mark" src="mark.svg" alt=""><div><b>CImEx Compliance</b><span>CBAM · network simulation</span></div></a>
+    <nav aria-label="Sections">
+      <a href="app.html#/dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</a>
+      <a href="app.html#/documents"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>Documents</a>
+      <a href="app.html#/report"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>Report</a>
+      <a href="docs.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/></svg>Documentation</a>
+      <a class="active" href="simulation.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/></svg>Simulation</a>
+      <a href="https://github.com/HemanthDadi1/AI-Export-Compliance"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 9l-4 3 4 3M16 9l4 3-4 3"/></svg>Code</a>
+    </nav>
+    <div class="foot">Our assumptions · MIT licensed</div>
+  </aside>
+
+  <main class="main">
+    <div class="top">
+      <div><h1>Network simulation</h1><p>How fast does verifying mills put every plant's steel on actual values?</p></div>
+    </div>
+    <div class="notice"><b>Our assumptions, not data.</b> Plants, mills and mill values are invented. The chance a mill joins is the biggest unknown and has not been tested with any real mill. The emissions arithmetic is the real engine in this repo.</div>
+
+    <section class="card" style="margin-bottom:16px" aria-label="Choose a market">
+      <div class="controls" style="gap:20px">
+        <div><div class="muted" style="margin-bottom:6px">How plants cluster on mills</div><div class="seg" id="zipf" role="group" aria-label="Mill concentration"></div></div>
+        <div><div class="muted" style="margin-bottom:6px">Chance per month an approached mill joins</div><div class="seg" id="join" role="group" aria-label="Join chance"></div></div>
+      </div>
+    </section>
+
+    <div class="kpis" id="kpis"></div>
+
+    <div class="grid2">
+      <section class="card" aria-labelledby="c1-h">
+        <div class="card-head"><div><h2 id="c1-h">Steel on verified mill data</h2><p class="sub">By month. Line: median of 40 markets. Band: 10th to 90th percentile.</p></div></div>
+        <div id="c1"></div>
+      </section>
+      <section class="card" aria-labelledby="c2-h">
+        <div class="card-head"><div><h2 id="c2-h">Mills needed</h2><p class="sub">Share of steel covered, largest mills first</p></div></div>
+        <div id="c2"></div>
+      </section>
+    </div>
+
+    <section class="card" style="margin-bottom:16px" aria-labelledby="t-h">
+      <div class="card-head"><div><h2 id="t-h">Results by month</h2><p class="sub">Medians, with the 10th to 90th percentile for steel on verified data</p></div></div>
+      <div class="table-wrap" id="tbl"></div>
+      <p class="muted" id="saveNote"></p>
+    </section>
+
+    <section class="card" aria-labelledby="a-h">
+      <div class="card-head"><div><h2 id="a-h">Assumptions</h2><p class="sub">Change them in simulate.py and run python3 simulate.py --write</p></div></div>
+      <ul class="list" id="assume"></ul>
+    </section>
+  </main>
+</div>
+<script src="simulation.js"></script>
+<script>
+const S = window.SIM, A = S.assumptions, $ = id => document.getElementById(id);
+const f = (x, d = 0) => Number(x).toLocaleString("en-GB", {maximumFractionDigits:d, minimumFractionDigits:d});
+const pct = x => f(x * 100) + "%";
+const esc = s => String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+let zipf = "typical", join = "medium";
+
+function seg(id, options, current, set) {
+  $(id).innerHTML = options.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${v === current}">${l}</button>`).join("");
+  $(id).querySelectorAll("button").forEach(b => b.onclick = () => { set(b.dataset.v); render(); });
+}
+
+function frame(W, H, xmax, xticks) {
+  const L = 44, R = 12, T = 12, B = 28, x = v => L + (W - L - R) * v / xmax, y = v => H - B - (H - T - B) * v;
+  let g = [0, .25, .5, .75, 1].map(v => `<line class="gridline" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v * 100}%</text>`).join("");
+  g += xticks.map(t => `<text x="${x(t)}" y="${H - 8}" text-anchor="middle">${t}</text>`).join("");
+  return {x, y, g};
+}
+
+function kpi(label, value, unit, foot) {
+  return `<div class="card kpi"><div class="label">${label}</div><div class="value">${value}<span class="unit">${unit}</span></div><div class="foot">${foot}</div></div>`;
+}
+
+function render() {
+  seg("zipf", [["spread", "Spread out"], ["typical", "Typical"], ["concentrated", "Concentrated"]], zipf, v => zipf = v);
+  seg("join", [["slow", "10%"], ["medium", "25%"], ["fast", "50%"]], join, v => join = v);
+  const sc = S.scenarios[`${zipf}_${join}`], m12 = sc.months[12], m24 = sc.months[24];
+  const first = t => sc.coverage.findIndex(v => v >= t) + 1, k50 = first(.5), k80 = first(.8);
+
+  $("kpis").innerHTML =
+    kpi("Mills to cover 80% of steel", k80, `of ${A.mills}`, `<span class="pill info">${k50} mills</span> cover half`) +
+    kpi("Steel on verified data, month 12", pct(m12.share.p50), "", `<span class="pill info">${pct(m12.share.p10)}–${pct(m12.share.p90)}</span> range`) +
+    kpi("Emissions drop, month 12", f(m12.drop_pct.p50), "%", `<span class="pill ok">${f(m24.drop_pct.p50)}%</span> by month 24`) +
+    kpi("Mills verified by month 24", m24.mills_verified, `of ${A.mills}`, `${m24.plants} plants on the platform`);
+
+  let c = frame(720, 280, A.months, [0, 6, 12, 18, 24]);
+  const up = sc.months.map(m => `${c.x(m.month)},${c.y(m.share.p90)}`), down = sc.months.slice().reverse().map(m => `${c.x(m.month)},${c.y(m.share.p10)}`);
+  $("c1").innerHTML = `<svg class="chart" viewBox="0 0 720 280" role="img" aria-label="Share of steel on verified mill data by month">${c.g}
+    <polygon class="f-band" points="${up.concat(down).join(" ")}"/><polyline class="s-acc" points="${sc.months.map(m => `${c.x(m.month)},${c.y(m.share.p50)}`).join(" ")}"/></svg>
+    <p class="muted" style="text-align:center;margin:4px 0 0">Months since launch</p>`;
+
+  c = frame(360, 280, A.mills, [0, 10, 20, 30, 40]);
+  const marks = [[.5, k50], [.8, k80]].map(([t, k]) => `<line stroke="var(--bad)" stroke-dasharray="4 4" x1="${c.x(k)}" x2="${c.x(k)}" y1="${c.y(0)}" y2="${c.y(t)}"/><circle class="f-bad" cx="${c.x(k)}" cy="${c.y(t)}" r="4"><title>${k} mills cover ${t * 100}%</title></circle>`).join("");
+  $("c2").innerHTML = `<svg class="chart" viewBox="0 0 360 280" role="img" aria-label="Share of steel covered as more mills are verified">${c.g}
+    <polyline class="s-acc" points="${sc.coverage.map((v, k) => `${c.x(k + 1)},${c.y(v)}`).join(" ")}"/>${marks}</svg>
+    <p class="muted" style="text-align:center;margin:4px 0 0">Mills verified · red marks: 50% and 80%</p>`;
+
+  $("tbl").innerHTML = `<table><thead><tr><th class="n">Month</th><th class="n">Plants</th><th class="n">Mills verified</th><th>Steel on verified data</th><th class="n">Emissions drop</th><th class="n">Importer saving per plant, ${A.year}</th></tr></thead><tbody>
+    ${[6, 12, 18, 24].map(i => { const m = sc.months[i]; return `<tr><td class="n">${i}</td><td class="n">${m.plants}</td><td class="n">${m.mills_verified}</td>
+      <td><div style="display:flex;gap:10px;align-items:center"><div class="progress" style="flex:1"><span style="width:${m.share.p50 * 100}%"></span></div><span class="muted">${pct(m.share.p50)} (${pct(m.share.p10)}–${pct(m.share.p90)})</span></div></td>
+      <td class="n">${f(m.drop_pct.p50)}%</td><td class="n">€${f(m.saving.p50)}</td></tr>`; }).join("")}</tbody></table>`;
+  $("saveNote").textContent = `The saving goes to the EU importer who would otherwise pay on defaults, at €${A.eua_price} per tCO2 and a ${pct(A.payable_share)} payable share in ${A.year}. Plants do not receive it directly.`;
+}
+
+$("assume").innerHTML = [
+  `${A.plants} plants join evenly over ${A.months} months, buying from ${A.mills} mills (1 to 3 each).`,
+  `A plant buys a median of ${A.median_t} t of steel a year, with a wide spread of sizes. It makes ${A.yield} t of bolts per tonne of steel and burns ${A.lpg_per_t} t of LPG per tonne of bolts.`,
+  `A mill is approached once ${A.pull} of our plants buy from it. Each month it joins with the chosen chance. Its verified value is a random ${A.see_lo} to ${A.see_hi} tCO2 per tonne of steel.`,
+  `Default value: ${A.default_see} tCO2 per tonne before the ${A.year} mark-up (secondary source, unconfirmed). Direct emissions use the same fuel factors as the app.`,
+  `Each scenario is the median of ${A.seeds} random markets. No mill refuses, and every verifier accepts mill data. Both are open questions.`,
+].map(t => `<li><span class="dot warn"></span><span>${esc(t)}</span></li>`).join("");
+render();
+</script>
+</body>
+</html>
