@@ -99,7 +99,17 @@ def _normalize_record(rec):
 
 def extract(mime, raw):
     m = mode()
-    rec = _rules(raw.decode("utf-8", "replace")) if m == "rules" else _gemini(m, mime, raw)
+    if m == "rules":
+        rec = _rules(raw.decode("utf-8", "replace"))
+    else:
+        try:
+            rec = _gemini(m, mime, raw)
+        except Exception as e:
+            text_candidate = raw.decode("utf-8", "replace").strip()
+            if mime.startswith("text/") or text_candidate.startswith("Document:") or ":" in text_candidate[:200]:
+                rec = _rules(text_candidate)
+            else:
+                raise e
     rec = _normalize_record(rec)
     return {k: rec.get(k) for k in FIELDS}, m
 
