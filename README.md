@@ -4,7 +4,7 @@ CImEx stands for Carbon Import Export.
 
 A carbon compliance platform. The first product, CBAM, lets a clerk at a metal plant produce EU carbon-border data for fasteners (CN 7318) that a verifier can check. The homepage has a Products menu; CBAM opens the dashboard, and other rules (Scope 1–3, India CCTS, California SB 253) are planned on the same document layer. AI reads the documents. Rules do the calculation. The app drafts the monitoring plan, lists the gaps still open, and creates a carbon compliance report once the required documents are in. A mill verified once serves every plant that buys from it.
 
-**Website:** https://cimex-compliance.vercel.app (also on GitHub Pages: https://hemanthdadi1.github.io/CImEx-Compliance/) (homepage, [app](https://cimex-compliance.vercel.app/app.html), [docs](https://cimex-compliance.vercel.app/docs.html), [simulation](https://cimex-compliance.vercel.app/simulation.html)). On the website the app runs the same Python engine in your browser with Pyodide, using made-up sample data.
+**Website:** https://cimex-compliance.vercel.app | **GCP Cloud Run (Mumbai):** https://cimex-compliance-1023003229611.asia-south1.run.app (also on GitHub Pages: https://hemanthdadi1.github.io/CImEx-Compliance/) (homepage, [app](https://cimex-compliance.vercel.app/app.html), [docs](https://cimex-compliance.vercel.app/docs.html), [simulation](https://cimex-compliance.vercel.app/simulation.html)). On the website the app runs the same Python engine in your browser with Pyodide, using made-up sample data.
 
 **Pitch:** [Startup Buildathon idea submission (PDF)](pitch/CImEx-Buildathon-Idea-Submission.pdf) and the [architecture diagram](pitch/architecture.png). The Buildathon build is planned in [AGENT_PLAN.md](AGENT_PLAN.md).
 

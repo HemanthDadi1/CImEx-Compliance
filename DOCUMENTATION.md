@@ -227,6 +227,7 @@ The entire codebase is verified by 11 automated test suites:
 
 ## 6. Deployment & Access Links
 - **GitHub Repository:** [https://github.com/HemanthDadi1/CImEx-Compliance](https://github.com/HemanthDadi1/CImEx-Compliance)
-- **Live Web Prototype:** [https://cimex-compliance.vercel.app](https://cimex-compliance.vercel.app)
-- **Interactive App:** [https://cimex-compliance.vercel.app/app.html](https://cimex-compliance.vercel.app/app.html)
+- **GCP Cloud Run Production (Mumbai):** [https://cimex-compliance-1023003229611.asia-south1.run.app](https://cimex-compliance-1023003229611.asia-south1.run.app)
+- **Live Web Prototype (Vercel):** [https://cimex-compliance.vercel.app](https://cimex-compliance.vercel.app)
+- **Interactive App (GCP):** [https://cimex-compliance-1023003229611.asia-south1.run.app/app.html](https://cimex-compliance-1023003229611.asia-south1.run.app/app.html)
 - **Pitch Deck (PDF):** `pitch/CImEx-Buildathon-Idea-Submission.pdf` (8 slides, 980 KB)
