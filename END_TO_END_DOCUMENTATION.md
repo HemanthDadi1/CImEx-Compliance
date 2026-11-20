@@ -128,7 +128,9 @@ $$\text{Liability}(y) = \text{Export Volume (t)} \times \text{SEE}_{\text{total}
 
 ---
 
-## 2. Calculation Engine Engineering & Deep-Dive (`calc.py`)
+## 2. Deterministic Calculation Engine (`calc.py`)
+
+> **Crucial Rule:** **Zero AI is used in the math.** All calculations are strictly executed by deterministic Python functions in `calc.py`. The final compliance numbers submitted to verifiers come exclusively from physical rules and stoichiometric formulas.
 
 ### 2.1 The "Black-Box LLM Hallucination" Hazard
 During early system prototyping, an immediate hazard was identified: **attempting to use generative AI or dynamic LLM prompt engineering to compute carbon emissions.**
@@ -140,12 +142,95 @@ During early system prototyping, an immediate hazard was identified: **attemptin
 
 Gemini 1.5 is restricted entirely to reading, optical character recognition, and entity extraction. The moment extracted parameters pass the human confirmation gate, they are fed into pure, frozen Python functions.
 
-### 2.2 Wire Rod Precursor Disambiguation (Alloy vs Non-Alloy)
+---
+
+### 2.2 A. Metallurgical Mass Balance (Annex V)
+
+Reconciles physical steel inputs, finished fastener outputs, and process scrap under physical conservation laws:
+
+$$\text{Yield Ratio} = \frac{\text{Finished Goods (t)}}{\text{Precursor Steel Consumed (t)}} = \frac{1,000}{1,040} = 96.15\%$$
+
+$$\text{Scrap Rate} = \frac{\text{Physical Scrap (t)}}{\text{Precursor Steel Consumed (t)}} = \frac{40}{1,040} = 3.85\%$$
+
+```python
+# calc.py mass balance formulation
+steel_t = sum(p["tonnes"] for p in precursors)
+yield_ratio = round(output / steel_t, 4) if steel_t > 0 else 1.0
+specific_consumption = round(steel_t / output, 4) if output > 0 else 1.0
+scrap_t = round(max(0.0, steel_t - output), 2)
+scrap_rate = round(scrap_t / steel_t, 4) if steel_t > 0 else 0.0
+```
+
+#### Sector Benchmarks & Impossibility Breach Detection
+The engine validates this against EU sector benchmarks defined in `calc.py`:
+* **Bolts (CN 7318 15):** Benchmark Yield $\approx 88\%$ ($12\%$ heading flash and trimming scrap).
+* **Nuts (CN 7318 16):** Benchmark Yield $\approx 82\%$ ($18\%$ scrap from center hole punching).
+* **Washers (CN 7318 22):** Benchmark Yield $\approx 90\%$ ($10\%$ sheet stamping scrap).
+
+```python
+YIELD_BENCHMARKS = {"731815": 0.88, "731816": 0.82, "731822": 0.90}
+```
+
+**Physical Anomaly Interceptions:**
+1. **Physical Impossibility Breach:** If a plant claims **100% yield with 0% scrap**, or if finished fastener output exceeds steel precursor inputs ($\text{Yield} > 1.05$), the engine flags `"status": "under_input"`. It is physically impossible to produce $1,000\text{ t}$ of fasteners from $900\text{ t}$ of wire rod without undocumented opening inventory.
+2. **Material Leakage Alert:** If yield falls below $0.70$ ($>30\%$ scrap), the engine flags `"status": "high_scrap"`. Verifiers treat excessive unaccounted losses as potential unallocated off-the-books carbon emissions.
+3. **5% Operating Tolerance:** A 5% tolerance window ($M_{\text{steel}} \ge 0.95 \times M_{\text{output}}$) accommodates normal month-to-month inventory buffer carryover.
+
+---
+
+### 2.3 B. Sub-Installation Process Route Allocation
+
+Instead of dumping all plant fuel into every bolt, the factory is split into discrete manufacturing routes:
+
+* **`cold_formed`:** Cold-heading and thread-rolling lines use only electricity. Direct fuel emissions are allocated strictly at **$0.0\text{ tCO}_2\text{/t}$**.
+* **`heat_treated`:** Continuous tempering and hardening furnaces (fired by LPG or natural gas at $880^\circ\text{C}$–$920^\circ\text{C}$) are allocated strictly to heat-treated high-tensile product lines (Grades 8.8, 10.9, 12.9).
+
+```python
+# calc.py sub-installation route modeling
+ht_lines = [o for o in plant["output"] if o.get("route") != "cold_formed"]
+cf_lines = [o for o in plant["output"] if o.get("route") == "cold_formed"]
+ht_output = sum(o["tonnes"] for o in ht_lines)
+cf_output = sum(o["tonnes"] for o in cf_lines)
+
+routes = {}
+if cf_output > 0:
+    see_dir_ht = (direct / ht_output) if ht_output > 0 else 0.0
+    routes["heat_treated"] = {"output_t": ht_output, "see_direct": round(see_dir_ht, 4)}
+    routes["cold_formed"] = {"output_t": cf_output, "see_direct": 0.0}
+```
+
+* **Competitive Economic Benefit:** Without activity-based allocation, simple zinc-plated cold-formed fasteners are unfairly burdened with furnace emissions they never consumed. Segregating routes lowers cold-formed compliance costs to the absolute regulatory minimum.
+
+---
+
+### 2.4 C. Specific Embedded Emissions Math
+
+The total Specific Embedded Emissions (SEE) are computed using exact stoichiometric equations:
+
+#### 1. Direct Fuel Emissions ($\text{SEE}_{\text{direct}}$)
+$$\text{SEE}_{\text{direct}} = \frac{\text{Direct Fuel Consumption} \times \text{Fuel Emission Factor}}{\text{Total Production}} = \frac{200\text{ tCO}_2}{1,000\text{ t}} = 0.20\text{ tCO}_2\text{/t}$$
+
+Fuel stoichiometry accounts for physical density and net calorific values:
+* **LPG:** $2.985\text{ tCO}_2/\text{t}$ (density: $0.54\text{ kg/L}$).
+* **Diesel (HSD):** $3.186\text{ tCO}_2/\text{t}$ (density: $0.84\text{ kg/L}$).
+* **Natural Gas (PNG):** $0.00195\text{ tCO}_2/\text{m}^3$.
+
+#### 2. Precursor Embedded Emissions ($\text{SEE}_{\text{precursor}}$)
+$$\text{SEE}_{\text{precursor}} = \frac{\sum \left( \text{Allocated Heat Tonnes} \times \text{Specific Heat Footprint} \right)}{\text{Total Production}} = 4.18\text{ tCO}_2\text{/t}$$
+
+#### 3. Total Embedded Emissions
+$$\text{Total Embedded Emissions} = \text{SEE}_{\text{direct}} + \text{SEE}_{\text{precursor}} = 0.20 + 4.18 = 4.38\text{ tCO}_2\text{/t}$$
+
+*(When verified primary mill heat data, such as Kaveri Steel Heat #8841 certified at $1.942\text{ tCO}_2\text{e/t}$, is attached to the ledger, this drops from $4.38\text{ tCO}_2/\text{t}$ down to **$2.254\text{ tCO}_2\text{/t}$**, saving **€849,075** in tariff liabilities).*
+
+---
+
+### 2.5 Wire Rod Precursor Disambiguation (Alloy vs Non-Alloy)
 Under EU Implementing Regulation 2025/2621 Annex I, precursor wire rod default values diverge drastically based on metallurgical composition:
 * **Non-Alloy Wire Rod (CN 7213):** Baseline default = **$4.27\text{ tCO}_2\text{e/t}$**.
 * **Alloy Wire Rod (CN 7227):** Baseline default = **$7.30\text{ tCO}_2\text{e/t}$**.
 
-A common clerical error in manufacturing paperwork is omitting the specific HS/CN prefix or confusing cold-heading quality (CHQ) carbon steel with low-alloy steel (such as boron-treated or chrome-moly fasteners). `calc.py` implements automated CN prefix parsing:
+A common clerical error in manufacturing paperwork is omitting the specific HS/CN prefix or confusing cold-heading quality (CHQ) carbon steel with low-alloy steel. `calc.py` implements automated CN prefix parsing:
 
 ```python
 PRECURSOR_DEFAULTS = {"7213": 4.27, "7227": 7.30}
@@ -157,93 +242,27 @@ def precursor_see(cn=None):
     return PRECURSOR_DEFAULTS["7213"]
 ```
 
-### 2.3 Fuel Stoichiometry & Density Modeling
-Indian fastener manufacturing plants commonly procure fuel in mixed physical units:
-* **LPG:** Procured in bulk metric tonnes ($t$), commercial $19\text{ kg}$ cylinders, or liters ($L$).
-* **Diesel (HSD):** Billed at fuel dispensaries in liters ($L$).
-* **Natural Gas (PNG):** Metered in standard cubic meters ($m^3$).
-
-`calc.py` models exact physical densities and emission factors:
-```python
-FUELS = {"lpg": (2.985, 0.54), "diesel": (3.186, 0.84)}
-NG_PER_M3 = 0.00195
-
-def fuel_tco2(fuel, qty, unit):
-    if fuel == "natural_gas":
-        if unit != "m3":
-            raise ValueError("natural gas needs m3")
-        return qty * NG_PER_M3
-    if fuel not in FUELS:
-        raise ValueError(f"unknown fuel {fuel}")
-    per_t, dens = FUELS[fuel]
-    tonnes = {"t": qty, "kg": qty / 1000, "litre": qty * dens / 1000}.get(unit)
-    if tonnes is None:
-        raise ValueError(f"unknown unit {unit}")
-    return tonnes * per_t
-```
-* **Density Multipliers:** LPG density is set to $0.54\text{ kg/L}$; Diesel density is set to $0.84\text{ kg/L}$.
-* **Rigorous Validation:** If a clerk attempts to supply a fuel bill with an incompatible unit (e.g. entering natural gas in liters), the engine raises an explicit `ValueError` before any ledger entry can corrupt the audit dossier.
-
-### 2.4 Metallurgical Mass Balance Engine (EU Annex V)
-Under EU CBAM Annex V, declarations are audited against physical conservation of mass. In steel fastener production, raw wire rod is cold-headed, trimmed, threaded, heat-treated, and surface-finished. These processes generate production scrap (heading flash, trimming turnings, rejected pieces) and high-temperature furnace scale loss.
-
-The First-Law Mass Conservation equation requires:
-$$\sum M_{\text{raw steel in}} = M_{\text{finished goods}} + M_{\text{recycled scrap out}} + M_{\text{scale loss}}$$
-
-In `calc.py`, the engine benchmarks physical yields against empirical metallurgical tolerances:
-```python
-YIELD_BENCHMARKS = {
-    "731815": 0.88,  # Bolts: ~88% yield (12% scrap)
-    "731816": 0.82,  # Nuts: ~82% yield (18% scrap - hole punching)
-    "731822": 0.90   # Washers: ~90% yield (10% scrap - stamping)
-}
-```
-
-#### Physical Anomaly Interception:
-1. **The "Free Energy / Magic Steel" Fraud:** If finished fastener output exceeds steel precursor inputs ($\text{Yield} > 1.05$), the engine flags `under_input`. It is physically impossible to produce $1,000\text{ t}$ of bolts from $900\text{ t}$ of wire rod without undisclosed inventory.
-2. **Excessive Scrap / Material Diversion:** If yield falls below $0.70$ ($30\%+$ scrap rate), the engine flags `high_scrap`. This warns factory managers that significant metal is being lost or diverted off-the-books, which verifiers will scrutinize as unallocated emissions.
-3. **5% Inventory Tolerance:** A 5% tolerance window ($M_{\text{steel}} \ge 0.95 \times M_{\text{output}}$) accounts for opening stock held over from the prior month.
-
-### 2.5 Sub-Installation Route Modeling (Activity-Based Allocation)
-A critical flaw in standard factory emissions averaging is the "cross-contamination of routes." 
-* **Route A (Cold-Formed / As-Headed Fasteners):** Standard zinc-plated drywall screws or non-critical fasteners undergo cold-heading and thread-rolling with zero heat treatment. They consume electricity but **zero furnace fuel**.
-* **Route B (High-Tensile Fasteners Grade 8.8 / 10.9 / 12.9):** High-strength bolts must undergo continuous hardening and tempering in LPG-fired mesh belt furnaces at $880^\circ\text{C}$ to $920^\circ\text{C}$.
-
-If a plant pools all fuel across all output, cold-formed exports are unfairly penalized with fuel emissions they never consumed. `calc.py` isolates furnace routes dynamically:
-
-```python
-ht_lines = [o for o in plant["output"] if o.get("route") != "cold_formed"]
-cf_lines = [o for o in plant["output"] if o.get("route") == "cold_formed"]
-ht_output = sum(o["tonnes"] for o in ht_lines)
-cf_output = sum(o["tonnes"] for o in cf_lines)
-
-if cf_output > 0:
-    see_dir_ht = (direct / ht_output) if ht_output > 0 else 0.0
-    routes["heat_treated"] = {"output_t": ht_output, "see_direct": round(see_dir_ht, 4)}
-    routes["cold_formed"] = {"output_t": cf_output, "see_direct": 0.0}
-```
-* High-tensile bolts absorb the full thermal furnace load.
-* Cold-formed fasteners carry $\text{SEE}_{\text{direct}} = 0.0\text{ tCO}_2\text{e/t}$, maximizing their competitive advantage in the European market.
-
 ---
 
 ## 3. Active FIFO Carbon Depletion Ledger (`server.py`)
 
 ### 3.1 The "Double-Claiming" Greenwashing Loophole
-The single largest compliance loophole threatening non-EU exporters is **Certificate Double-Allocation**:
-1. An Indian fastener exporter purchases a single $100\text{ tonne}$ coil of verified low-carbon steel (e.g. Kaveri Steel Heat #8841, certified at $1.942\text{ tCO}_2\text{e/t}$).
-2. In Q1, the factory exports $80\text{ tonnes}$ of bolts to an importer in Germany, attaching MTC #8841 as proof of clean steel.
-3. In Q2, the factory exports $60\text{ tonnes}$ to an importer in Italy. Without a centralized tracking ledger, the factory clerk attaches the *same* MTC #8841.
-4. In Q3, the factory exports another $70\text{ tonnes}$ to France, again attaching MTC #8841.
+When an exporter ships goods across multiple quarters, standard enterprise resource planning (ERP) systems risk double-counting clean steel:
+1. An Indian fastener exporter purchases a single $200\text{ MT}$ batch of verified low-carbon steel (e.g. `KIS-H88213` purchased @ $2.10\text{ tCO}_2\text{/t}$).
+2. In Q1, the factory exports $120\text{ MT}$ of bolts to Germany, attaching MTC #KIS-H88213 as proof of low emissions.
+3. In Q2, the factory exports $130\text{ MT}$ to Italy. Standard ERP systems track commercial weights but lack a carbon-intensity depletion ledger. The clerk attaches the *same* low-carbon certificate.
 
-**The Fraud Result:** $210\text{ tonnes}$ of export declarations claimed a certificate that only covered $100\text{ tonnes}$ of clean steel. When EU national competent authorities cross-reference import declarations against mill heat certificates, the entire batch is audited, retroactively penalized, and disqualified.
+**The Fraud Result:** $250\text{ MT}$ of export declarations claimed a certificate that only covered $200\text{ MT}$ of clean steel. When EU national competent authorities cross-reference import declarations against mill heat certificates, the entire batch is audited, retroactively penalized, and disqualified.
 
-### 3.2 The First-In, First-Out (FIFO) Balance Sheet Model
-To prevent this vulnerability, CImEx implements an active inventory depletion balance sheet in `server.py`:
+---
+
+### 3.2 Step 6: Active Carbon Depletion Ledger Mechanics
+
+To prevent double-counting, the backend enforces an active **First-In, First-Out (FIFO) Depletion Ledger** in `server.py`:
 
 ```
                [MTC Heat Certificate Deposit]
-                 Heat #8841: 1,089.0 Tonnes
+               KIS-H88213: 200 MT @ 2.10 tCO2/t
                              │
                              ▼
  ┌─────────────────────────────────────────────────────────┐
@@ -251,22 +270,35 @@ To prevent this vulnerability, CImEx implements an active inventory depletion ba
  ├───────────┬───────────────┬──────────────┬──────────────┤
  │ Heat No.  │ Deposited (t) │ Allocated(t) │ Remaining(t) │
  ├───────────┼───────────────┼──────────────┼──────────────┤
- │ #8841     │   1,089.00    │    845.50    │    243.50    │ ➔ Status: ACTIVE
+ │KIS-H88213 │    200.00     │    120.00    │    80.00     │ ➔ Status: ACTIVE
  └───────────┴───────────────┴──────────────┴──────────────┘
                              │
-             [Export Shipment Exceeds Balance]
+           [Next Export Order: 130 MT Requested]
                              ▼
  ┌─────────────────────────────────────────────────────────┐
  │                  OVERDRAFT INTERCEPTION                 │
  ├─────────────────────────────────────────────────────────┤
- │ 1. 243.50 t Allocated at Verified Basis (1.942 tCO2e/t) │
- │ 2. Remaining 56.50 t Automatically Falls Back to        │
- │    EU Default Penalty (4.27 tCO2e/t + Markup)           │
+ │ 1. Clean Allocation: Remaining 80 MT priced at          │
+ │    verified 2.10 tCO2/t                                 │
+ │ 2. Overdraft Fallback: Excess 50 MT automatically       │
+ │    reverts to EU Default Penalty (5.72 tCO2/t + Markup) │
  │ 3. Status Flags: OVERDRAFT (Audit Red Flag)             │
  └─────────────────────────────────────────────────────────┘
 ```
 
-#### Core Ledger Implementation:
+#### The Three Core Lifecycle Rules:
+1. **Heat Registration:** Each verified Mill Test Certificate registers its total purchased tonnage and certified emission factor:
+   * Example: `KIS-H88213`: $200\text{ MT}$ purchased @ $2.10\text{ tCO}_2\text{/t}$ (or Kaveri Steel Heat #8841: $1,089\text{ MT}$ @ $1.942\text{ tCO}_2\text{/t}$).
+2. **Shipment Allocation:** For each export declaration, the engine deducts the steel consumed:
+   $$\text{Remaining Balance} = \text{Purchased Tonnage} - \text{Cumulative Allocated Tonnage}$$
+3. **Overdraft Fallback:** If an exporter attempts to claim $250\text{ MT}$ from a $200\text{ MT}$ certificate:
+   * The first $200\text{ MT}$ is priced at the clean $2.10\text{ tCO}_2\text{/t}$.
+   * The excess $50\text{ MT}$ is capped and automatically falls back to the **EU default penalty rate ($5.72\text{ tCO}_2\text{/t} + 20\%\text{ mark-up}$)**.
+
+---
+
+### 3.3 Core Ledger Implementation (`server.py`)
+
 ```python
 def carbon_ledger(p):
     """Tracks every steel heat's purchased vs allocated tonnes, remaining balance, and overdraft prevention."""
@@ -311,7 +343,13 @@ def carbon_ledger(p):
     return ledger
 ```
 
-### 3.3 The Trader / Stockist Disqualification Trap
+* **Audit Interceptor Warnings:** When `overdraft > 0`, [`server.py` Lines 540–548](file:///Users/hemanthdadi/Downloads/CBAM/mvp/server.py#L540-L548) automatically alerts the verifier:
+  > *"Carbon ledger overdraft on Heat(s): Heats have been allocated more tonnage than verified on the mill certificate. Excess steel is automatically reverted to EU default values."*
+* **Dossier Serialization:** The active ledger state is serialized directly to `carbon_ledger.json` in the downloadable Verifier Audit ZIP dossier (`/api/dossier`).
+
+---
+
+### 3.4 The Trader / Stockist Disqualification Trap
 Under Article 3(15) of Regulation (EU) 2023/956, an **installation** is strictly defined as the stationary technical unit where the primary greenhouse gas-emitting manufacturing process takes place. For steel, this means the **primary melting facility** operating the Blast Furnace, Basic Oxygen Furnace, or Electric Arc Furnace (e.g., Tata Steel, JSW, SAIL, RINL, Kaveri Steel).
 
 In India, **over 70% of small-and-medium fastener plants do not buy directly from the mill**. They purchase wire coils through regional stockists, trading houses, and steel service centers.
