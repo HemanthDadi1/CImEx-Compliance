@@ -171,7 +171,7 @@ async function documents() {
   $("confirmAll").disabled = !total || ok === total;
   $("reviewGrid").innerHTML = total ? [...S.docs].sort((a, b) => (b.issues.length > 0) - (a.issues.length > 0) || a.reviewed - b.reviewed).map(docCard).join("")
     : `<div class="card empty" style="grid-column:1/-1"><b>No files yet</b><p>Drop the plant's documents above, or load the sample documents to see how it works.</p></div>`;
-  $("samplePack").onclick = e => { e.preventDefault(); S.manifest.demo.forEach((n, i) => setTimeout(() => { const a = document.createElement("a"); a.href = `demo/${n}`; a.download = n; a.click(); }, i * 150)); };
+  if ($("samplePack")) $("samplePack").onclick = e => { e.preventDefault(); S.manifest.demo.forEach((n, i) => setTimeout(() => { const a = document.createElement("a"); a.href = `demo/${n}`; a.download = n; a.click(); }, i * 150)); };
 }
 
 $("reviewGrid").addEventListener("input", e => {
@@ -212,10 +212,35 @@ $("files").onchange = e => upload([...e.target.files]).then(() => { e.target.val
 ["dragleave", "drop"].forEach(t => $("drop").addEventListener(t, e => { e.preventDefault(); $("drop").classList.remove("over"); }));
 $("drop").addEventListener("drop", e => upload([...e.dataTransfer.files]));
 $("samples").onclick = async () => {
-  const r = await call("POST", "/api/demo");
-  S.notes = r.data.filter(x => x.error && !x.doc).map(x => ({file: x.file, error: x.error}));
+  const r = await call("POST", "/api/demo", {}, {type: "text"});
+  S.notes = (r.data || []).filter(x => x.error && !x.doc).map(x => ({file: x.file, error: x.error}));
   await refresh();
 };
+if ($("samplesReal")) {
+  $("samplesReal").onclick = async () => {
+    $("samplesReal").disabled = true;
+    $("samplesReal").textContent = "Reading certs with AI...";
+    try {
+      const r = await call("POST", "/api/demo", {}, {type: "real"});
+      S.notes = (r.data || []).filter(x => x.error && !x.doc).map(x => ({file: x.file, error: x.error}));
+    } finally {
+      $("samplesReal").disabled = false;
+      $("samplesReal").textContent = "⚡ Load real certs & photos (PDF/Image)";
+    }
+    await refresh();
+  };
+}
+if ($("sampleDownloadBtn")) {
+  $("sampleDownloadBtn").onclick = e => {
+    e.stopPropagation();
+    const m = $("sampleDownloadMenu");
+    if (m) m.style.display = m.style.display === "block" ? "none" : "block";
+  };
+  document.addEventListener("click", () => {
+    const m = $("sampleDownloadMenu");
+    if (m) m.style.display = "none";
+  });
+}
 $("reset").onclick = async () => { if (!confirm("Clear all documents, logs and mill data from this session?")) return; await call("POST", "/api/reset"); S.notes = []; S.drafts = {}; await refresh(); };
 
 // ---------- dashboard ----------

@@ -637,6 +637,13 @@ def dispatch(method, path, query, body):
             if path == "/api/dossier":
                 return 200, export_dossier(year), "application/zip", [
                     ("Content-Disposition", f"attachment; filename=cbam_verifier_dossier_{year}.zip")]
+            if path == "/api/sample_download":
+                kind = query.get("kind") or "original"
+                data = export_samples(kind)
+                fname = ("cimex_original_input_samples.zip" if kind == "original"
+                         else "cimex_extracted_text_samples.zip" if kind in ("extracted", "text")
+                         else "cimex_all_samples_bundle.zip")
+                return 200, data, "application/zip", [("Content-Disposition", f"attachment; filename={fname}")]
             if path == "/api/docs":
                 return js(200, [{"id": i, "name": d["name"], "mime": d["mime"], "mode": d["mode"], "record": d["record"],
                                  "reviewed": d["reviewed"], "edits": d["edits"], "issues": issues(d)} for i, d in docs.items()])
@@ -644,6 +651,26 @@ def dispatch(method, path, query, body):
                 d = docs[query["id"]]
                 safe = d["mime"] if d["mime"] == "application/pdf" or d["mime"].startswith("image/") else "text/plain; charset=utf-8"
                 return 200, d["raw"], safe, []
+            if path == "/api/demo":
+                kind = query.get("type") or "text"
+                if kind == "real":
+                    results = []
+                    samples_dir = os.path.join(HERE, "samples")
+                    if os.path.isdir(samples_dir):
+                        for f in sorted(os.listdir(samples_dir)):
+                            p = os.path.join(samples_dir, f)
+                            if not os.path.isfile(p) or f.startswith("."):
+                                continue
+                            mime = "application/pdf" if f.endswith(".pdf") else "image/jpeg" if f.lower().endswith((".jpg", ".jpeg")) else "image/png" if f.endswith(".png") else "text/plain"
+                            results.append(add_doc(f, mime, open(p, "rb").read()))
+                    for f in ("fuel_1.txt", "fuel_2.txt", "production.txt"):
+                        p = os.path.join(HERE, "demo", f)
+                        if os.path.isfile(p):
+                            results.append(add_doc(f, "text/plain", open(p, "rb").read()))
+                    return js(200, results)
+                else:
+                    return js(200, [add_doc(f, "text/plain", open(os.path.join(HERE, "demo", f), "rb").read())
+                                    for f in sorted(os.listdir(os.path.join(HERE, "demo")))])
         if method == "POST":
             body = body or {}
             if path == "/api/upload":
@@ -651,8 +678,25 @@ def dispatch(method, path, query, body):
                     return js(400, {"error": "filename and data are required"})
                 return js(200, add_doc(str(body["filename"])[:200], body.get("mime") or "text/plain", base64.b64decode(body["data"])))
             if path == "/api/demo":
-                return js(200, [add_doc(f, "text/plain", open(os.path.join(HERE, "demo", f), "rb").read())
-                                for f in sorted(os.listdir(os.path.join(HERE, "demo")))])
+                kind = query.get("type") or (body.get("type") if isinstance(body, dict) else None) or "text"
+                if kind == "real":
+                    results = []
+                    samples_dir = os.path.join(HERE, "samples")
+                    if os.path.isdir(samples_dir):
+                        for f in sorted(os.listdir(samples_dir)):
+                            p = os.path.join(samples_dir, f)
+                            if not os.path.isfile(p) or f.startswith("."):
+                                continue
+                            mime = "application/pdf" if f.endswith(".pdf") else "image/jpeg" if f.lower().endswith((".jpg", ".jpeg")) else "image/png" if f.endswith(".png") else "text/plain"
+                            results.append(add_doc(f, mime, open(p, "rb").read()))
+                    for f in ("fuel_1.txt", "fuel_2.txt", "production.txt"):
+                        p = os.path.join(HERE, "demo", f)
+                        if os.path.isfile(p):
+                            results.append(add_doc(f, "text/plain", open(p, "rb").read()))
+                    return js(200, results)
+                else:
+                    return js(200, [add_doc(f, "text/plain", open(os.path.join(HERE, "demo", f), "rb").read())
+                                    for f in sorted(os.listdir(os.path.join(HERE, "demo")))])
             if path in ("/api/review", "/api/doc_remove"):
                 if body.get("doc") not in docs:
                     return js(404, {"error": "no such document"})
@@ -815,6 +859,89 @@ def export_dossier(year):
             raw_bytes = d["raw"] if isinstance(d["raw"], bytes) else d["raw"].encode("utf-8", "replace")
             safe_name = os.path.basename(str(d["name"]).replace("\\", "/")) or f"doc_{doc_id}"
             z.writestr(f"evidence_documents/{safe_name}", raw_bytes)
+
+    return buf.getvalue()
+
+
+def export_samples(kind="original"):
+    """Packages sample input documents (original PDFs/photos) or extracted text files into a downloadable ZIP."""
+    import io, zipfile
+    buf = io.BytesIO()
+    comp = zipfile.ZIP_DEFLATED
+    try:
+        import zlib
+    except ImportError:
+        comp = zipfile.ZIP_STORED
+
+    with zipfile.ZipFile(buf, "w", comp) as z:
+        samples_dir = os.path.join(HERE, "samples")
+        demo_dir = os.path.join(HERE, "demo")
+
+        if kind in ("original", "all", "bundle"):
+            prefix = "original_input_documents/" if kind in ("all", "bundle") else ""
+            if os.path.isdir(samples_dir):
+                for f in sorted(os.listdir(samples_dir)):
+                    p = os.path.join(samples_dir, f)
+                    if os.path.isfile(p) and not f.startswith("."):
+                        z.write(p, prefix + f)
+            for doc_id, d in docs.items():
+                if d.get("mime") in ("application/pdf", "image/jpeg", "image/png"):
+                    z.writestr(f"{prefix}session_{d['name']}", d["raw"])
+
+        if kind in ("extracted", "text", "all", "bundle"):
+            prefix = "extracted_text_files/" if kind in ("all", "bundle") else ""
+            if os.path.isdir(demo_dir):
+                for f in sorted(os.listdir(demo_dir)):
+                    p = os.path.join(demo_dir, f)
+                    if os.path.isfile(p) and not f.startswith("."):
+                        z.write(p, prefix + f)
+            active_extractions = []
+            for doc_id, d in docs.items():
+                active_extractions.append({
+                    "id": doc_id,
+                    "filename": d["name"],
+                    "mime": d["mime"],
+                    "mode": d["mode"],
+                    "record": d["record"],
+                    "reviewed": d["reviewed"],
+                    "edits": d["edits"]
+                })
+            if active_extractions:
+                z.writestr(f"{prefix}active_ocr_extractions.json", json.dumps(active_extractions, indent=2))
+                for item in active_extractions:
+                    clean_name = os.path.splitext(item["filename"])[0]
+                    txt_lines = [
+                        f"Document: {item['filename']} (Extracted via {item['mode'].upper()})",
+                        f"Document Type: {item['record'].get('doc_type')}",
+                        f"Supplier: {item['record'].get('supplier')}",
+                        f"Heat Number: {item['record'].get('heat_no')}",
+                        f"Steel (t): {item['record'].get('steel_tonnes')}",
+                        f"Fuel: {item['record'].get('fuel')}",
+                        f"Quantity: {item['record'].get('quantity')} {item['record'].get('unit') or ''}",
+                        f"Output (t): {item['record'].get('output_tonnes')}",
+                        f"CN Code: {item['record'].get('cn_code')}",
+                        f"Verbatim Quote: \"{item['record'].get('quote')}\""
+                    ]
+                    z.writestr(f"{prefix}{clean_name}_extracted.txt", "\n".join(txt_lines))
+
+        readme_lines = [
+            "CImEx Compliance - Sample Data Package",
+            "=======================================",
+            "",
+            "1. ORIGINAL INPUT DOCUMENTS:",
+            "   - Real industrial Mill Test Certificates (EN 10204 3.1) in PDF format.",
+            "   - Factory floor smartphone photograph of Mill Test Certificate (.jpg).",
+            "   - Ingested by Google Cloud Vertex AI (Gemini 1.5 Multimodal API) in asia-south1 (Mumbai).",
+            "",
+            "2. EXTRACTED TEXT & OCR DATA:",
+            "   - Clean normalized text representations of plant inputs (steel, fuels, production).",
+            "   - JSON schemas capturing entities, verbatim source quotes, and document coordinates.",
+            "   - Zero AI in calculations: processed strictly by deterministic Python rules in calc.py.",
+            "",
+            "Live Service: https://cimex-compliance-1023003229611.asia-south1.run.app",
+            "Repository: https://github.com/HemanthDadi1/CImEx-Compliance"
+        ]
+        z.writestr("README.txt", "\n".join(readme_lines))
 
     return buf.getvalue()
 

@@ -164,6 +164,40 @@ def test_carbon_ledger_and_trader_detection():
     assert ready["verifier_ready"] is True
 
 
+def test_sample_downloads_and_real_demo():
+    import io, zipfile
+    reset()
+    # Test loading real samples (PDF and images)
+    res = call("POST", "/api/demo", body={"type": "real"})[1]
+    assert len(res) >= 3
+    assert any(r["file"] == "mtc_real.pdf" for r in res)
+    assert any(r["file"] == "sample_mtc_photo.jpg" for r in res)
+
+    # Test downloading original input samples
+    code, orig_zip, ctype, _ = call("GET", "/api/sample_download", {"kind": "original"})
+    assert code == 200 and ctype == "application/zip"
+    with zipfile.ZipFile(io.BytesIO(orig_zip), "r") as z:
+        names = z.namelist()
+        assert "mtc_real.pdf" in names or any("mtc_real.pdf" in n for n in names)
+        assert "README.txt" in names
+
+    # Test downloading extracted text samples
+    code, txt_zip, ctype, _ = call("GET", "/api/sample_download", {"kind": "extracted"})
+    assert code == 200 and ctype == "application/zip"
+    with zipfile.ZipFile(io.BytesIO(txt_zip), "r") as z:
+        names = z.namelist()
+        assert "mtc_1.txt" in names or any("mtc_1.txt" in n for n in names)
+        assert "README.txt" in names
+
+    # Test downloading complete bundle
+    code, all_zip, ctype, _ = call("GET", "/api/sample_download", {"kind": "all"})
+    assert code == 200 and ctype == "application/zip"
+    with zipfile.ZipFile(io.BytesIO(all_zip), "r") as z:
+        names = z.namelist()
+        assert any(n.startswith("original_input_documents/") for n in names)
+        assert any(n.startswith("extracted_text_files/") for n in names)
+
+
 def test_static_files_stay_inside_docs():
     assert server.static_path("/") .endswith(os.path.join("docs", "index.html"))
     assert server.static_path("/app.html").endswith(os.path.join("docs", "app.html"))

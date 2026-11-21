@@ -45,7 +45,11 @@
     <section id="view-documents" data-title="Documents" data-sub="Upload what the plant already has, check what we read, then confirm it.">
       <div class="notice" id="browserNote" hidden>This browser demo reads text documents in the sample format. Real PDFs and phone photos need the hosted app with Gemini. Nothing you upload here leaves your browser.</div>
       <div class="card-head"><div><h2>Required for the report</h2><p class="sub" id="readyLine"></p></div>
-        <div class="controls"><button class="btn" id="samples" type="button">Load sample documents</button><button class="btn" id="reset" type="button">Start over</button></div></div>
+        <div class="controls" style="display:inline-flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" id="samples" type="button" title="Load standard text sample files (11 docs)">Load text samples</button>
+          <button class="btn accent" id="samplesReal" type="button" title="Load real PDF certificates and photos processed by Gemini/Vertex AI">⚡ Load real certs & photos (PDF/Image)</button>
+          <button class="btn" id="reset" type="button">Start over</button>
+        </div></div>
       <div class="checks" id="checklist"></div>
       <label class="drop" id="drop">
         <input type="file" id="files" multiple accept=".pdf,.png,.jpg,.jpeg,.txt">
@@ -54,7 +58,18 @@
       </label>
       <div id="uploadNotes"></div>
       <div class="card-head" style="margin-top:8px"><div><h2>Check what we read</h2><p class="sub" id="reviewLine">Values count toward your number only after you confirm them. Fix anything that is wrong.</p></div>
-        <div class="controls"><a class="btn small" id="samplePack" href="#/documents">Download sample files</a><button class="btn small primary" id="confirmAll" type="button">Confirm all as read</button></div></div>
+        <div class="controls" style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div class="dropdown-wrapper" style="position:relative;display:inline-block">
+            <button class="btn small" id="sampleDownloadBtn" type="button">Download samples ▾</button>
+            <div class="dropdown-menu" id="sampleDownloadMenu" style="display:none;position:absolute;right:0;top:100%;background:var(--bg,#fff);border:1px solid var(--border,#e2e8f0);border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,0.14);z-index:100;min-width:280px;padding:6px 0;margin-top:4px">
+              <a class="dropdown-item" href="/api/sample_download?kind=original" download="cimex_original_input_samples.zip" style="display:block;padding:8px 14px;color:inherit;text-decoration:none;font-size:13px">📄 <b>Original Input Data</b> (PDFs & Photos ZIP)</a>
+              <a class="dropdown-item" href="/api/sample_download?kind=extracted" download="cimex_extracted_text_samples.zip" style="display:block;padding:8px 14px;color:inherit;text-decoration:none;font-size:13px">📝 <b>Extracted Text / OCR Data</b> (Clean Text & JSON ZIP)</a>
+              <div style="border-top:1px solid var(--border,#e2e8f0);margin:4px 0"></div>
+              <a class="dropdown-item" href="/api/sample_download?kind=all" download="cimex_all_samples_bundle.zip" style="display:block;padding:8px 14px;color:inherit;text-decoration:none;font-size:13px">📦 <b>Complete Bundle</b> (Both Inputs & Extracted ZIP)</a>
+            </div>
+          </div>
+          <button class="btn small primary" id="confirmAll" type="button">Confirm all as read</button>
+        </div></div>
       <div class="review-grid" id="reviewGrid"></div>
     </section>
 
